@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const User = require('./User'); // Imports for reference, assuming they exist in the same directory
 
 const ReviewSchema = new mongoose.Schema({
   rating: {
@@ -56,7 +57,7 @@ ReviewSchema.statics.getAverageRating = async function (resourceId, resourceType
       averageRating: obj[0] ? obj[0].averageRating : 0
     });
   } catch (err) {
-    console.error(`Error updating average rating for ${resourceType} ${resourceId}:`, err);
+    console.error(`Error updating average rating for ${resourceType} ${resourceId}:`, err.message);
   }
 };
 
@@ -65,8 +66,8 @@ ReviewSchema.post('save', function() {
   this.constructor.getAverageRating(this.resourceId, this.resourceType);
 });
 
-// Call getAverageRating after remove
-ReviewSchema.post('remove', function() {
+// Call getAverageRating after deleteOne (for controllers using review.deleteOne())
+ReviewSchema.post('deleteOne', { document: true, query: false }, function() {
   this.constructor.getAverageRating(this.resourceId, this.resourceType);
 });
 

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const cloudinary = require('../config/cloudinary'); // ADDED IMPORT for pre-hook
 
 const courseSchema = new mongoose.Schema({
   name: {
@@ -36,8 +37,7 @@ const courseSchema = new mongoose.Schema({
 
 // Virtual field to get average rating
 courseSchema.virtual('averageRating').get(function() {
-  // Logic to calculate average rating from Reviews will be done in the controller/aggregator
-  return null; // Placeholder for simplicity. Real calculation requires aggregation.
+  return this.averageRating || 0; // Ensures a default value of 0 is returned if no rating exists
 });
 
 // Reverse populate with reviews
@@ -57,12 +57,11 @@ courseSchema.pre('deleteOne', { document: true, query: false }, async function(n
     await this.model('Review').deleteMany({ resourceId: this._id, resourceType: 'Course' });
 
     // 2. Find and delete all related Files (which also includes sub-folders)
-    const relatedFiles = await this.model('File').find({ course: this._id, type: 'document' });
+    const allFilesToDelete = await this.model('File').find({ course: this._id }); 
     
-    // Delete documents from Cloudinary
-    const cloudinary = require('../config/cloudinary');
-    for (const file of relatedFiles) {
-        if (file.cloudinaryId) {
+    // Delete Cloudinary files for documents
+    for (const file of allFilesToDelete) {
+        if (file.type === 'document' && file.cloudinaryId) {
             await cloudinary.uploader.destroy(file.cloudinaryId, { resource_type: 'raw' });
         }
     }
@@ -72,7 +71,6 @@ courseSchema.pre('deleteOne', { document: true, query: false }, async function(n
 
     next();
 });
-
 
 
 module.exports = mongoose.model('Course', courseSchema);

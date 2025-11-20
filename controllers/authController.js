@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const User = require('../models/User'); // FIXED PATH
 const rateLimit = require('express-rate-limit');
+const asyncHandler = require('../utils/asyncHandler'); // ADDED UTILITY
+const ErrorResponse = require('../utils/ErrorResponse'); // ADDED UTILITY
 
 // Rate limiting middleware: 5 requests per 10 minutes per IP for register/login
 const authLimiter = rateLimit({
@@ -18,45 +20,35 @@ const usernameRegex = /^[a-zA-Z0-9_]{3,50}$/;
 
 exports.authLimiter = authLimiter;
 
-exports.register = async (req, res) => {
-  try {
+exports.register = asyncHandler(async (req, res, next) => { // USED asyncHandler
     res.setHeader('Content-Type', 'application/json')
-    const { username, firstName, lastName, email, password } = req.body;
+    let { username, firstName, lastName, email, password } = req.body; 
     email = email.toLowerCase().trim(); 
     console.log("Registering user:", { username, firstName, lastName, email });
+    
     // Validate required fields
     if (!username || !firstName || !lastName || !email || !password) {
-      return res.status(400).json({
-        message: 'All fields are required: username, firstName, lastName, email, password'
-      });
+      return next(new ErrorResponse('All fields are required: username, firstName, lastName, email, password', 400));
     }
 
     // Validate username format
     if (!usernameRegex.test(username)) {
-      return res.status(400).json({
-        message: 'Username must be 3-50 characters and contain only letters, numbers, and underscores'
-      });
+      return next(new ErrorResponse('Username must be 3-50 characters and contain only letters, numbers, and underscores', 400));
     }
 
     // Validate email format
     if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        message: 'Please enter a valid email address'
-      });
+      return next(new ErrorResponse('Please enter a valid email address', 400));
     }
 
     // Validate password complexity
     if (!passwordRegex.test(password)) {
-      return res.status(400).json({
-        message: 'Password must be at least 8 characters and include at least one letter and one number'
-      });
+      return next(new ErrorResponse('Password must be at least 8 characters and include at least one letter and one number', 400));
     }
 
-    // Validate name lengths (should match your schema maxlength: 50)
+    // Validate name lengths
     if (firstName.length > 50 || lastName.length > 50) {
-      return res.status(400).json({
-        message: 'First name and last name must be 50 characters or less'
-      });
+      return next(new ErrorResponse('First name and last name must be 50 characters or less', 400));
     }
 
     // Check for existing user
@@ -66,12 +58,9 @@ exports.register = async (req, res) => {
 
     if (existingUser) {
       const field = existingUser.email === email ? 'email' : 'username';
-      return res.status(400).json({
-        message: `A user with this ${field} already exists`
-      });
+      return next(new ErrorResponse(`A user with this ${field} already exists`, 400));
     }
 
-    // Create user object (profilePicture will be undefined and handled by schema)
     const userData = {
       username,
       firstName,
@@ -95,66 +84,47 @@ exports.register = async (req, res) => {
       message: 'User registered successfully'
     });
 
-  } catch (err) {
-    console.error('Registration error:', err);
-    
-    // Handle specific MongoDB errors
-    if (err.code === 11000) {
-      const field = Object.keys(err.keyPattern)[0];
-      return res.status(400).json({
-        message: `A user with this ${field} already exists`
-      });
-    }
+});
 
-    res.status(400).json({ 
-      message: 'Registration failed', 
-      error: err.message 
-    });
-  }
-};
 
-exports.login = async (req, res) => {
+exports.login = asyncHandler(async (req, res, next) => { // USED asyncHandler
   let { email, password } = req.body;
   email = email.toLowerCase().trim(); 
   const user = await User.findOne({ email });
 
   if (!user || !(await user.comparePassword(password))) {
-    return res.status(401).json({ message: 'Invalid credentials' });
+    return next(new ErrorResponse('Invalid credentials', 401));
   }
 
   const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
   res.json({ token });
-};
+});
 
-exports.checkAuth = async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select('-password');
-    if (!user) {
-      return res.status(404).json({ 
+exports.checkAuth = asyncHandler(async (req, res, next) => { // USED asyncHandler
+  // If no token was sent (guest user), req.user will be undefined
+  if (!req.user) {
+    return res.json({ 
         isAuthenticated: false, 
-        message: 'User not found' 
-      });
-    }
-    
-    res.json({ 
-      isAuthenticated: true, 
-      user: {
-        id: user._id,
-        username: user.username,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        role: user.role,
-        profilePicture: user.profilePicture,
-        favoritePhotos: user.favoritePhotos,
-        favoriteProducts: user.favoriteProducts
-      }
-    });
-  } catch (err) {
-    console.error('Auth check error:', err);
-    res.status(500).json({ 
-      isAuthenticated: false, 
-      message: 'Server error during authentication check' 
+        message: 'User is not logged in' 
     });
   }
-};
+
+  const user = await User.findById(req.user.id).select('-password');
+  if (!user) {
+    return next(new ErrorResponse('User not found after authentication', 404));
+  }
+  
+  res.json({ 
+    isAuthenticated: true, 
+    user: {
+      id: user._id,
+      username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      role: user.role,
+      favoriteCourses: user.favoriteCourses,
+      favoriteFiles: user.favoriteFiles
+    }
+  });
+});

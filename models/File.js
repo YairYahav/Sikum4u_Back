@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const cloudinary = require('../config/cloudinary'); // ADDED IMPORT for pre-hook
 
 const fileSchema = new mongoose.Schema({
   name: {
@@ -68,14 +69,15 @@ fileSchema.pre('deleteOne', { document: true, query: false }, async function(nex
 
     // 2. Delete from Cloudinary if it's a document
     if (this.type === 'document' && this.cloudinaryId) {
-        const cloudinary = require('../config/cloudinary');
+        // cloudinary is already imported
         await cloudinary.uploader.destroy(this.cloudinaryId, { resource_type: 'raw' });
     }
     
-    // 3. Remove reference from parent/course children list (optional, but good practice)
+    // 3. Remove reference from parent/course children list 
     const parentId = this.parent || this.course;
     const ParentModel = this.parent ? this.model('File') : this.model('Course');
     
+    // Pull the reference of this file/folder from its parent's children array
     await ParentModel.updateOne(
         { _id: parentId },
         { $pull: { children: this._id } }

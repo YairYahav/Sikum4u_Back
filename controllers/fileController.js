@@ -1,8 +1,8 @@
-const File = require('../models/File');
-const Course = require('../models/Course');
+const File = require('../models/File'); // FIXED PATH
+const Course = require('../models/Course'); // FIXED PATH
 const cloudinary = require('../config/cloudinary');
-
-const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const asyncHandler = require('../utils/asyncHandler');
+const ErrorResponse = require('../utils/ErrorResponse'); 
 
 // @desc    Get content (files/folders) of a parent (Course or Folder)
 // @route   GET /api/files?parentId=...
@@ -17,7 +17,7 @@ exports.getFiles = asyncHandler(async (req, res, next) => {
         const parentFile = await File.findById(parentId).select('children type');
         if (parentFile) {
             if (parentFile.type !== 'folder') {
-                return res.status(400).json({ message: 'Parent ID must be a folder' });
+                return next(new ErrorResponse('Parent ID must be a folder', 400));
             }
             // Fetch children of the folder
             children = await File.find({ parent: parentId }).select('name type url createdAt');
@@ -28,11 +28,11 @@ exports.getFiles = asyncHandler(async (req, res, next) => {
                  // Fetch children of the course (top-level)
                 children = await File.find({ course: parentId, parent: null }).select('name type url createdAt');
             } else {
-                return res.status(404).json({ message: 'Parent resource not found' });
+                return next(new ErrorResponse('Parent resource not found', 404));
             }
         }
     } else {
-        // No parentId - maybe featured files only? 
+        // No parentId - return featured items
         children = await File.find({ isFeatured: true }).select('name type url createdAt course').populate('course', 'name');
     }
 
@@ -48,7 +48,7 @@ exports.getFileById = asyncHandler(async (req, res, next) => {
         .select('-cloudinaryId'); // Don't expose cloudinary ID
     
     if (!file) {
-        return res.status(404).json({ message: `File/Folder not found with id of ${req.params.id}` });
+        return next(new ErrorResponse(`File/Folder not found with id of ${req.params.id}`, 404));
     }
     
     res.status(200).json({ success: true, data: file });
@@ -61,10 +61,10 @@ exports.getFullResFile = asyncHandler(async (req, res, next) => {
     const file = await File.findById(req.params.id).select('type url cloudinaryId');
     
     if (!file || file.type !== 'document') {
-        return res.status(404).json({ message: 'Document not found or is a folder' });
+        return next(new ErrorResponse('Document not found or is a folder', 404));
     }
     
-    // Cloudinary can generate a secure URL if needed, or you can return the stored URL
+    // The client can now use this URL to display the PDF/document
     res.status(200).json({ success: true, url: file.url });
 });
 
@@ -73,16 +73,25 @@ exports.getFullResFile = asyncHandler(async (req, res, next) => {
 // @access  Private/Admin
 exports.createFile = asyncHandler(async (req, res, next) => {
     req.body.uploadedBy = req.user.id;
-    const { name, type, parent, course } = req.body;
+    let { name, type, parent, course } = req.body;
 
-    // 1. Validate Parent/Course existence and type
+    // 1. Validate Parent/Course existence and determine final Course ID
     if (parent) {
-        const parentFile = await File.findById(parent).select('type');
+        const parentFile = await File.findById(parent).select('type course');
         if (!parentFile || parentFile.type !== 'folder') {
-            return res.status(400).json({ message: 'Invalid parent ID: must be a folder' });
+            return next(new ErrorResponse('Invalid parent ID: must be a folder', 400));
         }
+        // Inherit course ID from parent folder if not explicitly provided
+        course = course || parentFile.course; 
+
     } else if (!course) {
-        return res.status(400).json({ message: 'Must link to a Course or a Parent Folder' });
+        return next(new ErrorResponse('Must link to a Course or a Parent Folder', 400));
+    }
+
+    // Final course validation
+    const courseCheck = await Course.findById(course).select('_id');
+    if (!courseCheck) {
+         return next(new ErrorResponse('Course not found', 404));
     }
 
     // 2. Handle Folder Creation (No file upload needed)
@@ -94,11 +103,14 @@ exports.createFile = asyncHandler(async (req, res, next) => {
     // 3. Handle Document Upload (requires `upload.single('file')` middleware)
     if (type === 'document') {
         if (!req.file) {
-            return res.status(400).json({ message: 'Document file is required for type "document"' });
+            return next(new ErrorResponse('Document file is required for type "document"', 400));
         }
         
+        // Name defaults to the file's original name if not provided in body
+        const finalName = name || req.file.originalname;
+
         const newDocument = await File.create({
-            name: req.file.originalname, // Use original name from upload for simplicity
+            name: finalName, 
             type: 'document',
             url: req.file.path, // Path from Cloudinary storage
             cloudinaryId: req.file.filename, // Filename from Cloudinary storage
@@ -110,7 +122,7 @@ exports.createFile = asyncHandler(async (req, res, next) => {
         return res.status(201).json({ success: true, data: newDocument });
     }
 
-    res.status(400).json({ message: 'Invalid file type or request' });
+    return next(new ErrorResponse('Invalid file type or request', 400));
 });
 
 
@@ -121,10 +133,13 @@ exports.updateFile = asyncHandler(async (req, res, next) => {
     const file = await File.findById(req.params.id);
     
     if (!file) {
-        return res.status(404).json({ message: `File/Folder not found with id of ${req.params.id}` });
+        return next(new ErrorResponse(`File/Folder not found with id of ${req.params.id}`, 404));
     }
 
-    // You might want to prevent changing 'type' if a file has children.
+    // Authorization: User must be the uploader OR an Admin
+    if (file.uploadedBy.toString() !== req.user.id && req.user.role !== 'admin') {
+      return next(new ErrorResponse('Not authorized to update this file', 401));
+    }
     
     const updatedFile = await File.findByIdAndUpdate(req.params.id, req.body, {
         new: true,
@@ -142,20 +157,21 @@ exports.deleteFile = asyncHandler(async (req, res, next) => {
     const file = await File.findById(req.params.id);
     
     if (!file) {
-        return res.status(404).json({ message: `File/Folder not found with id of ${req.params.id}` });
+        return next(new ErrorResponse(`File/Folder not found with id of ${req.params.id}`, 404));
     }
 
-    // For documents, delete from Cloudinary
-    if (file.type === 'document' && file.cloudinaryId) {
-        await cloudinary.uploader.destroy(file.cloudinaryId, { resource_type: 'raw' });
+    // Authorization: User must be the uploader OR an Admin
+    if (file.uploadedBy.toString() !== req.user.id && req.user.role !== 'admin') {
+      return next(new ErrorResponse('Not authorized to delete this file', 401));
     }
-    
-    // For folders, you should recursively delete children first or prevent deletion if children exist
+
+    // For folders, prevent deletion if children exist
     if (file.type === 'folder' && file.children.length > 0) {
-         return res.status(400).json({ message: 'Folder must be empty to be deleted' });
+         return next(new ErrorResponse('Folder must be empty to be deleted', 400));
     }
 
-    await file.deleteOne();
+    // Use deleteOne() to trigger the pre('deleteOne') hook
+    await file.deleteOne(); 
 
     res.status(200).json({ success: true, data: {} });
 });

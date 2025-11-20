@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User'); // Assuming models is the correct folder
+const User = require('../models/User'); // FIXED PATH
 
 /**
  * Middleware for authenticating a user via JWT and optionally checking their role.
@@ -50,7 +50,7 @@ const auth = (roles = []) => async (req, res, next) => {
 
   } catch (err) {
     console.error('JWT Error:', err.message);
-    res.status(401).json({ message: 'Not authorized to access this route. Token failed.' });
+    res.status(401).json({ message: 'Not authorized to access this route. Token failed or expired.' });
   }
 };
 

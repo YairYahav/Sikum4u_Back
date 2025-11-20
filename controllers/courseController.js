@@ -1,8 +1,6 @@
-const Course = require('../models/Course');
-const ErrorResponse = require('../utils/ErrorResponse'); // Assuming you'll create a utility for custom errors
-
-// Helper function for custom errors (if not created, replace with res.status(400).json({...}))
-const asyncHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const Course = require('../models/Course'); // FIXED PATH
+const ErrorResponse = require('../utils/ErrorResponse'); 
+const asyncHandler = require('../utils/asyncHandler'); 
 
 // @desc    Get all courses
 // @route   GET /api/courses
@@ -64,7 +62,7 @@ exports.updateCourse = asyncHandler(async (req, res, next) => {
   
   // Ensure user is the admin (or super admin if needed)
   if (course.admin.toString() !== req.user.id && req.user.role !== 'admin') {
-      return res.status(401).json({ message: 'Not authorized to update this course' });
+      return next(new ErrorResponse('Not authorized to update this course', 401));
   }
 
   course = await Course.findByIdAndUpdate(req.params.id, req.body, {
@@ -87,11 +85,10 @@ exports.deleteCourse = asyncHandler(async (req, res, next) => {
 
   // Ensure user is the admin (or super admin if needed)
   if (course.admin.toString() !== req.user.id && req.user.role !== 'admin') {
-      return res.status(401).json({ message: 'Not authorized to delete this course' });
+      return next(new ErrorResponse('Not authorized to delete this course', 401));
   }
 
-  // Also delete all related files/folders/reviews (cascading delete logic would be here)
-  // For simplicity, we just delete the course and rely on manual cleanup or DB rules
+  // Use deleteOne() to trigger the pre('deleteOne') hook for cascade deletion
   await course.deleteOne(); 
 
   res.status(200).json({ success: true, data: {} });
