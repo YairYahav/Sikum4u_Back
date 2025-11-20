@@ -49,4 +49,30 @@ courseSchema.virtual('reviews', {
   match: { resourceType: 'Course' }
 });
 
+// Cascade delete files and reviews when a course is deleted
+courseSchema.pre('deleteOne', { document: true, query: false }, async function(next) {
+    console.log(`Files and Reviews being removed from course ${this._id}`);
+    
+    // 1. Delete all related Reviews
+    await this.model('Review').deleteMany({ resourceId: this._id, resourceType: 'Course' });
+
+    // 2. Find and delete all related Files (which also includes sub-folders)
+    const relatedFiles = await this.model('File').find({ course: this._id, type: 'document' });
+    
+    // Delete documents from Cloudinary
+    const cloudinary = require('../config/cloudinary');
+    for (const file of relatedFiles) {
+        if (file.cloudinaryId) {
+            await cloudinary.uploader.destroy(file.cloudinaryId, { resource_type: 'raw' });
+        }
+    }
+    
+    // Delete all File/Folder entries
+    await this.model('File').deleteMany({ course: this._id });
+
+    next();
+});
+
+
+
 module.exports = mongoose.model('Course', courseSchema);

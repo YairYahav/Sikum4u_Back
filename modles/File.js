@@ -61,4 +61,27 @@ fileSchema.virtual('reviews', {
   match: { resourceType: 'File' }
 });
 
+// Cascade delete reviews and delete from Cloudinary when a file is deleted
+fileSchema.pre('deleteOne', { document: true, query: false }, async function(next) {
+    // 1. Delete related Reviews
+    await this.model('Review').deleteMany({ resourceId: this._id, resourceType: 'File' });
+
+    // 2. Delete from Cloudinary if it's a document
+    if (this.type === 'document' && this.cloudinaryId) {
+        const cloudinary = require('../config/cloudinary');
+        await cloudinary.uploader.destroy(this.cloudinaryId, { resource_type: 'raw' });
+    }
+    
+    // 3. Remove reference from parent/course children list (optional, but good practice)
+    const parentId = this.parent || this.course;
+    const ParentModel = this.parent ? this.model('File') : this.model('Course');
+    
+    await ParentModel.updateOne(
+        { _id: parentId },
+        { $pull: { children: this._id } }
+    );
+
+    next();
+});
+
 module.exports = mongoose.model('File', fileSchema);
