@@ -16,6 +16,14 @@ const courseSchema = new mongoose.Schema({
     type: Boolean,
     default: false // For the scrolling list on the homepage
   },
+  // ADDED: שדה אמיתי לדירוג ממוצע שיעודכן על ידי ה-hook של Review
+  averageRating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5,
+    set: val => Math.round(val * 10) / 10 // עיגול לספרה עשרונית אחת
+  },
   // This will hold the direct files and folders within the course
   children: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -33,11 +41,6 @@ const courseSchema = new mongoose.Schema({
 }, {
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
-});
-
-// Virtual field to get average rating
-courseSchema.virtual('averageRating').get(function() {
-  return this.averageRating || 0; // Ensures a default value of 0 is returned if no rating exists
 });
 
 // Reverse populate with reviews

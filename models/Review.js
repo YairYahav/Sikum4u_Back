@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const User = require('./User'); // Imports for reference, assuming they exist in the same directory
+// const User = require('./User'); // Imports for reference, assuming they exist in the same directory
 
 const ReviewSchema = new mongoose.Schema({
   rating: {
@@ -54,7 +54,7 @@ ReviewSchema.statics.getAverageRating = async function (resourceId, resourceType
   try {
     const Model = mongoose.model(resourceType);
     await Model.findByIdAndUpdate(resourceId, {
-      averageRating: obj[0] ? obj[0].averageRating : 0
+      averageRating: obj[0] ? obj[0].averageRating : 0 // יעדכן את השדה החדש שהוספנו
     });
   } catch (err) {
     console.error(`Error updating average rating for ${resourceType} ${resourceId}:`, err.message);

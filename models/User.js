@@ -8,9 +8,14 @@ const userSchema = new mongoose.Schema({
   lastName: { type: String, required: true, maxlength: 50 },
   email: { type: String, unique: true, required: true },
   password: { type: String, required: true },
+  profilePicture: { type: String, default: null }, // ADDED: Profile picture URL (Placeholder for future feature)
   favoriteCourses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
   favoriteFiles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'File' }],
   role: { type: String, enum: ['user', 'admin'], default: 'user' }
+}, {
+  // Added options to ensure virtuals are included in JSON/Object conversions
+  toJSON: { virtuals: true }, 
+  toObject: { virtuals: true } 
 });
 
 // Hash password before saving

@@ -36,10 +36,25 @@ app.use('/api/reviews', reviewRoutes);
 
 // General Error Handler Middleware
 app.use((err, req, res, next) => {
+    // Determine the status code, default to 500
+    const statusCode = err.statusCode || 500;
+    
+    // Log the full error stack to the server console in all environments
     console.error(err.stack);
-    res.status(err.statusCode || 500).json({
+    
+    // Send a minimal error response to the client in production
+    // Send the full stack only if in development mode
+    const errorResponse = {
+        success: false,
         message: err.message || 'Server Error'
-    });
+    };
+
+    // Include stack trace only in development
+    if (process.env.NODE_ENV === 'development') {
+        errorResponse.stack = err.stack;
+    }
+    
+    res.status(statusCode).json(errorResponse);
 });
 
 const PORT = process.env.PORT || 5000;

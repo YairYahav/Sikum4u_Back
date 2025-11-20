@@ -54,9 +54,9 @@ exports.getFileById = asyncHandler(async (req, res, next) => {
     res.status(200).json({ success: true, data: file });
 });
 
-// @desc    Get full resolution/direct link for file (Admin/Private access)
+// @desc    Get full resolution/direct link for file (Public access for documents)
 // @route   GET /api/files/:id/full
-// @access  Private/Admin
+// @access  Public
 exports.getFullResFile = asyncHandler(async (req, res, next) => {
     const file = await File.findById(req.params.id).select('type url cloudinaryId');
     
