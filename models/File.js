@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const cloudinary = require('../config/cloudinary'); // ADDED IMPORT for pre-hook
+const cloudinary = require('../config/cloudinary'); 
 
 const fileSchema = new mongoose.Schema({
   name: {
@@ -8,33 +8,25 @@ const fileSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Name cannot be more than 100 characters']
   },
-  type: {
-    type: String,
-    enum: ['folder', 'document'], // A node can be a folder or a final document
-    required: true
-  },
+  // Type is implicitly 'document' now
   url: {
     type: String, // Public URL for the document (Cloudinary, S3, etc.)
-    required: function() { return this.type === 'document'; } // Only required for documents
+    required: true 
   },
   cloudinaryId: {
     type: String, // ID for managing the file on Cloudinary
-    required: function() { return this.type === 'document'; } 
+    required: true 
   },
-  parent: {
+  parentFolder: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'File', // Self-reference for nested folders
-    default: null
+    ref: 'Folder', // Reference to the parent folder
+    default: null // Can be null if file is direct child of Course (see Course model)
   },
   course: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Course', // Direct link to the main course
     required: true
   },
-  children: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'File' // Documents/Folders inside this folder
-  }],
   uploadedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -53,7 +45,7 @@ const fileSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Virtual field to get reviews for this file/folder
+// Virtual field to get reviews for this file/document
 fileSchema.virtual('reviews', {
   ref: 'Review',
   localField: '_id',
@@ -67,20 +59,19 @@ fileSchema.pre('deleteOne', { document: true, query: false }, async function(nex
     // 1. Delete related Reviews
     await this.model('Review').deleteMany({ resourceId: this._id, resourceType: 'File' });
 
-    // 2. Delete from Cloudinary if it's a document
-    if (this.type === 'document' && this.cloudinaryId) {
-        // cloudinary is already imported
+    // 2. Delete from Cloudinary
+    if (this.cloudinaryId) {
         await cloudinary.uploader.destroy(this.cloudinaryId, { resource_type: 'raw' });
     }
     
-    // 3. Remove reference from parent/course children list 
-    const parentId = this.parent || this.course;
-    const ParentModel = this.parent ? this.model('File') : this.model('Course');
+    // 3. Remove reference from parent (Folder or Course)
+    const ParentModel = this.parentFolder ? this.model('Folder') : this.model('Course');
+    const parentId = this.parentFolder || this.course;
     
-    // Pull the reference of this file/folder from its parent's children array
+    // Pull the reference of this file from its parent's 'files' array
     await ParentModel.updateOne(
         { _id: parentId },
-        { $pull: { children: this._id } }
+        { $pull: { files: this._id } }
     );
 
     next();

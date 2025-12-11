@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const cloudinary = require('../config/cloudinary'); // ADDED IMPORT for pre-hook
+const cloudinary = require('../config/cloudinary'); 
 
 const courseSchema = new mongoose.Schema({
   name: {
@@ -14,18 +14,22 @@ const courseSchema = new mongoose.Schema({
   },
   isFeatured: {
     type: Boolean,
-    default: false // For the scrolling list on the homepage
+    default: false 
   },
-  // ADDED: שדה אמיתי לדירוג ממוצע שיעודכן על ידי ה-hook של Review
   averageRating: {
     type: Number,
     default: 0,
     min: 0,
     max: 5,
-    set: val => Math.round(val * 10) / 10 // עיגול לספרה עשרונית אחת
+    set: val => Math.round(val * 10) / 10 
   },
-  // This will hold the direct files and folders within the course
-  children: [{
+  // UPDATED: Hold top-level folders
+  folders: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Folder' 
+  }],
+  // UPDATED: Hold top-level files (Documents) directly in the course
+  files: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'File' 
   }],
@@ -52,25 +56,22 @@ courseSchema.virtual('reviews', {
   match: { resourceType: 'Course' }
 });
 
-// Cascade delete files and reviews when a course is deleted
+// Cascade delete: delete all folders and files associated with the course
 courseSchema.pre('deleteOne', { document: true, query: false }, async function(next) {
-    console.log(`Files and Reviews being removed from course ${this._id}`);
+    console.log(`Resources being removed from course ${this._id}`);
     
-    // 1. Delete all related Reviews
+    const Folder = this.model('Folder');
+    const File = this.model('File');
+
+    // 1. Delete all related Reviews (Course reviews)
     await this.model('Review').deleteMany({ resourceId: this._id, resourceType: 'Course' });
 
-    // 2. Find and delete all related Files (which also includes sub-folders)
-    const allFilesToDelete = await this.model('File').find({ course: this._id }); 
+    // 2. Recursively delete all top-level folders (which cascades to sub-folders and their files via Folder pre-hook)
+    // We only need to target top-level folders that reference this course
+    await Folder.deleteMany({ _id: { $in: this.folders } });
     
-    // Delete Cloudinary files for documents
-    for (const file of allFilesToDelete) {
-        if (file.type === 'document' && file.cloudinaryId) {
-            await cloudinary.uploader.destroy(file.cloudinaryId, { resource_type: 'raw' });
-        }
-    }
-    
-    // Delete all File/Folder entries
-    await this.model('File').deleteMany({ course: this._id });
+    // 3. Delete all top-level files directly under the course (The file delete hook handles reviews/cloudinary)
+    await File.deleteMany({ _id: { $in: this.files } }); 
 
     next();
 });

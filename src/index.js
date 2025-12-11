@@ -26,12 +26,14 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const courseRoutes = require('./routes/courseRoutes');
 const fileRoutes = require('./routes/fileRoutes');
+const folderRoutes = require('./routes/folderRoutes'); // ADDED
 const reviewRoutes = require('./routes/reviewRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/folders', folderRoutes); // ADDED
 app.use('/api/reviews', reviewRoutes);
 
 // General Error Handler Middleware
